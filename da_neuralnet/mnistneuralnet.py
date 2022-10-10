@@ -28,6 +28,36 @@ class Sigmoid(Activation):
         sigmoid = cls.function(z)
         return sigmoid * (1 - sigmoid)
 
+class Cost(ABC):
+
+    @abstractmethod
+    def function(*args):
+        pass
+
+    @abstractmethod
+    def derivative(*args):
+        pass
+
+class Quadratic(Cost):
+
+    @staticmethod
+    def function(y, y_hat):
+        return 0.5 * ((y - y_hat)**2)
+
+    @staticmethod
+    def delta(y, y_hat, z):
+        return (y_hat - y) * Sigmoid.derivative(z)
+
+class CrossEntropy(Cost):
+
+    @staticmethod
+    def function(y, y_hat):
+        return y * np.log(y_hat) + (1 - y) * np.log(1 - y_hat)
+
+    @staticmethod
+    def delta(y, y_hat, z):
+        return y_hat - y
+
 class Network(object):
 
     # randomly generated weights and biases upon instantiating Network class - these
@@ -42,7 +72,10 @@ class Network(object):
         if activation_fns is None:
             self.activation_fns = [Sigmoid for n in range(self.num_layers - 1)]
     
-    def SGD(self, training_data, epochs, mini_batch_size, eta, test_data=None):
+    def SGD(self, training_data, epochs, mini_batch_size, eta, test_data=None, cost: Cost=Quadratic):
+        # create temporary cost attribute to carry over into other methods (e.g. backprop)
+        self._current_cost = cost
+        
         if test_data is not None:
             n_test = len(test_data)
         
@@ -110,7 +143,7 @@ class Network(object):
             activations.append(activation)
         
         # computing the output error, and populating nabla_b/w for output layer
-        delta.append(self.cost_derivative(activations[-1], y) * self.activation_fns[-1].derivative(zs[-1]))
+        delta.append(self._current_cost.delta(y, activations[-1], zs[-1]))
         nabla_w[-1] = delta[-1] @ activations[-2].T
         nabla_b[-1] = delta[-1]
 
@@ -121,10 +154,6 @@ class Network(object):
             nabla_b[-layer] = delta[-layer]
         
         return (nabla_w, nabla_b)
-        
-    # cost derivative for a quadratic cost function
-    def cost_derivative(self, a_L, y):
-        return (a_L - y)
 
     # determines how many outputs correspond correctly to the test data labels
     def evaluate(self, test_data):
@@ -134,4 +163,5 @@ class Network(object):
 # initialise neural network: network takes list of ints as an input, representing number of neurons in
 # each layer (optional input: list of activation function classes for L-1 layers)
 net = Network([784, 30, 10])
-net.SGD(training_data, 30, 10, 3.0, test_data=test_data)
+net.SGD(training_data, 30, 10, 0.5, test_data=test_data, cost=CrossEntropy)
+
