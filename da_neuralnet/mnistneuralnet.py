@@ -1,25 +1,46 @@
 import numpy as np
 import random
 from collections import deque
+from abc import ABC, abstractmethod
 
 from import_data import training_data, validation_data, test_data
 
-# define activation function and derivative
-def sigmoid(z):
-    return 1/(1 + np.exp(-z))
+# define activation function abstract base class
+class Activation(ABC):
 
-def sigmoid_prime(z):
-    return sigmoid(z)*(1 - sigmoid(z))
+    @abstractmethod
+    def function(*args):
+        pass
+
+    @abstractmethod
+    def derivative(*args):
+        pass
+
+# sigmoid activation function
+class Sigmoid(Activation):
+
+    @staticmethod
+    def function(z):
+        return 1/(1 + np.exp(-z))
+
+    @classmethod
+    def derivative(cls, z):
+        sigmoid = cls.function(z)
+        return sigmoid * (1 - sigmoid)
 
 class Network(object):
 
     # randomly generated weights and biases upon instantiating Network class - these
-    # are normally distributed with the standard normal distribution 
-    def __init__(self, sizes):
+    # are normally distributed with the standard normal distribution.
+    def __init__(self, sizes, activation_fns=None):
         self.num_layers = len(sizes)
         self.sizes = sizes
         self.weights = [np.random.randn(x, y) for x, y in zip(sizes[1:], sizes[:-1])]
         self.biases = [np.random.rand(x, 1) for x in sizes[1:]]
+
+        # sigmoid activation functions generated for each layer by default.
+        if activation_fns is None:
+            self.activation_fns = [Sigmoid for n in range(self.num_layers - 1)]
     
     def SGD(self, training_data, epochs, mini_batch_size, eta, test_data=None):
         if test_data is not None:
@@ -46,8 +67,8 @@ class Network(object):
     def feedforward(self, a):
         if a.ndim == 1:
             a = a.reshape(-1, 1)
-        for w, b in zip(self.weights, self.biases):
-            a = sigmoid(w @ a + b)
+        for w, b, a_fn in zip(self.weights, self.biases, self.activation_fns):
+            a = a_fn.function(w @ a + b)
         return a
 
     def update_mini_batch(self, mini_batch, eta):
@@ -82,20 +103,20 @@ class Network(object):
         delta = deque()
 
         # feedforward algorithm which populates zs and activations with vectors for l>1
-        for w, b in zip(self.weights, self.biases):
+        for w, b, a_fn in zip(self.weights, self.biases, self.activation_fns):
             z = w @ activation + b 
             zs.append(z)
-            activation = sigmoid(z)
+            activation = a_fn.function(z)
             activations.append(activation)
         
         # computing the output error, and populating nabla_b/w for output layer
-        delta.append(self.cost_derivative(activations[-1], y) * sigmoid_prime(zs[-1]))
+        delta.append(self.cost_derivative(activations[-1], y) * self.activation_fns[-1].derivative(zs[-1]))
         nabla_w[-1] = delta[-1] @ activations[-2].T
         nabla_b[-1] = delta[-1]
 
         # backpropagate the error for each layer
         for layer in range(2, self.num_layers):
-            delta.appendleft((self.weights[-layer+1].T @ delta[0]) * sigmoid_prime(zs[-layer]))
+            delta.appendleft((self.weights[-layer+1].T @ delta[0]) * self.activation_fns[-layer].derivative(zs[-layer]))
             nabla_w[-layer] = delta[-layer] @ activations[-layer-1].T
             nabla_b[-layer] = delta[-layer]
         
@@ -110,6 +131,7 @@ class Network(object):
         test_results = [(np.argmax(self.feedforward(x)), np.where(y == 1.)[0][0]) for x, y in test_data]
         return sum(int(x == y) for (x, y) in test_results)
 
-# initialise neural network
+# initialise neural network: network takes list of ints as an input, representing number of neurons in
+# each layer (optional input: list of activation function classes for L-1 layers)
 net = Network([784, 30, 10])
 net.SGD(training_data, 30, 10, 3.0, test_data=test_data)
